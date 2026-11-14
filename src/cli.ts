@@ -8,6 +8,7 @@ import { initDb, closeDb } from './store/db.js';
 import {
   createSession,
   getCurrentSession,
+  endSession,
   addDistraction,
   getAllSessions,
   getAllDistractions,
@@ -18,6 +19,7 @@ import {
   removeLockFile,
   appendDistraction,
   flushDistractions,
+  isProcessAlive,
 } from './store/lock.js';
 import { calculateStats } from './core/stats.js';
 import { startTimer } from './core/timer.js';
@@ -44,8 +46,20 @@ async function launchTimer(type: SessionType, duration: number, label: string): 
     // 检查是否有正在进行的会话
     const current = getCurrentSession();
     if (current) {
-      console.log('⚠️  已有正在进行的会话，请先完成或停止它');
-      process.exit(1);
+      const lock = readLockFile();
+      const stillRunning =
+        lock !== null && lock.sessionId === current.id && isProcessAlive(lock.pid);
+      if (stillRunning) {
+        console.log('⚠️  已有正在进行的会话，请先完成或停止它');
+        process.exit(1);
+      }
+      // 上个会话的进程已不在（SIGKILL / 关闭终端等未走清理路径）：
+      // 标记为 interrupted、刷入其缓冲的分心记录并清掉陈旧 lock，
+      // 否则一次崩溃会让 start/break 永远被拒（本 CLI 没有 stop 命令）。
+      endSession(current.id, 'interrupted');
+      flushDistractions((params) => addDistraction(params));
+      removeLockFile();
+      console.log(`🧹 清理了未正常结束的会话 #${current.id}（标记为 interrupted）`);
     }
 
     // 创建新会话
@@ -56,13 +70,15 @@ async function launchTimer(type: SessionType, duration: number, label: string): 
 
     console.log(label);
 
-    // 注册 SIGINT 处理器，确保 graceful shutdown
-    process.on('SIGINT', () => {
+    // 注册信号处理器，确保 graceful shutdown（SIGTERM 是 kill 的默认信号）
+    const shutdown = (): void => {
       flushDistractions((params) => addDistraction(params));
       removeLockFile();
       closeDb();
       process.exit(0);
-    });
+    };
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
 
     // 创建计时器状态，并关联数据库会话 ID
     const timerState = {
