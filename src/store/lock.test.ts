@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, existsSync, rmSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -9,6 +10,7 @@ import {
   appendDistraction,
   readDistractionBuffer,
   flushDistractions,
+  isProcessAlive,
   type LockFileData,
   type BufferDistraction,
 } from './lock.js';
@@ -319,3 +321,23 @@ function flushDistractionsDirect(
   writeFileSync(bufferPath, '[]', 'utf-8');
   return distractions.length;
 }
+
+
+describe('isProcessAlive', () => {
+  it('treats the current process as alive', () => {
+    expect(isProcessAlive(process.pid)).toBe(true);
+  });
+
+  it('treats invalid pids as dead', () => {
+    expect(isProcessAlive(0)).toBe(false);
+    expect(isProcessAlive(-1)).toBe(false);
+    expect(isProcessAlive(1.5)).toBe(false);
+  });
+
+  it('treats an exited child process as dead', () => {
+    const result = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+    expect(result.status).toBe(0);
+    // spawnSync 同步等待子进程退出，其 pid 已不存在（短窗口内被复用的概率可忽略）
+    expect(isProcessAlive(result.pid!)).toBe(false);
+  });
+});

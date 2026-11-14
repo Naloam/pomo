@@ -142,6 +142,29 @@ export function readDistractionBuffer(): BufferDistraction[] {
 }
 
 /**
+ * 检查指定 pid 的进程是否仍然存活（信号 0 探测）。
+ *
+ * 用于崩溃恢复：lock 文件里记录了会话进程的 pid，SIGKILL / 关闭终端等
+ * 未走 SIGINT 清理路径的退出会让会话行永久停留在 running。ESRCH = 进程
+ * 不存在；EPERM = 进程存在但属于其他用户（视为存活，宁可保守拒绝启动）。
+ * pid 被复用理论上可能误判存活，对单人 CLI 场景是可接受的启发式。
+ *
+ * @param pid - 进程 ID
+ * @returns 进程存活返回 true
+ */
+export function isProcessAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/**
  * 将 distractions.json 中的记录刷入 SQLite，然后清空缓冲文件
  * @param insertFn - 插入分心记录到数据库的函数
  * @returns 成功刷入的记录数
