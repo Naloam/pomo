@@ -121,14 +121,19 @@ export function getCurrentSession(): Session | null {
 
 /**
  * 获取指定日期的所有会话
- * @param date - 日期字符串（YYYY-MM-DD）
+ * @param date - 日期字符串（YYYY-MM-DD，本地时区）
  * @returns 该日期的 Session 数组
  */
 export function getSessionsByDate(date: string): Session[] {
   const db = getDb();
 
+  // started_at 存 UTC ISO 串，DATE() 默认取 UTC 日期——与 stats 层的本地
+  // 日期口径（toLocalDate）不一致：本地 00:00–08:00（UTC+8）开始的会话
+  // 会被归到前一天。按本地日期过滤，与统计口径对齐。
   const rows = db
-    .prepare('SELECT * FROM sessions WHERE DATE(started_at) = ? ORDER BY started_at')
+    .prepare(
+      "SELECT * FROM sessions WHERE DATE(started_at, 'localtime') = ? ORDER BY started_at",
+    )
     .all(date) as Record<string, unknown>[];
 
   return rows.map(rowToSession);

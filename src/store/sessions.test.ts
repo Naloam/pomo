@@ -150,11 +150,13 @@ describe('getSessionsByDate', () => {
   });
 
   it('should return sessions for a specific date', () => {
-    // 创建一个会话，用今天的日期查询
+    // 创建一个会话，用今天的【本地】日期查询（与 stats 层 toLocalDate 口径一致；
+    // 原断言用 toISOString() 的 UTC 日期，在非 UTC 时区的清晨会间歇性失败）
     createSession({ type: 'focus', duration: 1500 });
-    const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-    const sessions = getSessionsByDate(today);
+    const sessions = getSessionsByDate(localDate);
     expect(sessions.length).toBe(1);
     expect(sessions[0].type).toBe('focus');
   });
